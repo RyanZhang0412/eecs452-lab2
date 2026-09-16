@@ -356,7 +356,7 @@ make
 ./your_program
 ```
 
-or：`g++ main.cpp -o app `pkg-config --cflags --libs opencv4``
+或：`g++ main.cpp -o app `pkg-config --cflags --libs opencv4``
 
 参考：[OpenCV Linux GCC CMake Tutorial](https://docs.opencv.org/4.6.0/db/df5/tutorial_linux_gcc_cmake.html)
 
