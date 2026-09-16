@@ -18,16 +18,13 @@ class Timer():
 
     # Call this function to reset the timer
     def start_time(self):
-        # TODO: Update self.prev_start_time
-        pass
+        self.prev_start_time = time.time()
 
     # Print time since start_time() was called
     def end_time(self):
-        return
-        # TODO: Replace return statment with functionality. Calculate time 
-        # passed from self.prev_start_time
-        # elapsed_time = Fill this in
+        elapsed_time = time.time() - self.prev_start_time
 
-        # Print elapsed time if printing is enabled
         if self.printflag == True:
             print("%s: %.06f s"%(self.desc, elapsed_time))
+
+        return elapsed_time

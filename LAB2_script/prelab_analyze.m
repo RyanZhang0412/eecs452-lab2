@@ -1,24 +1,26 @@
 % EECS 452 Lab 2 Pre-Lab helper
-% Place Canvas images in this folder (or edit the filenames below), then run:
+% Run from LAB2_script:
 %   >> prelab_analyze
 %
-% Works with Canvas names like:
-%   fruit_min_light.jpg / fruit_mid_light.jpg / fruit_max_light.jpg
-% (any *.jpg/*.png whose name contains min/mid/max)
+% Images are read from ../report_assets/ (fruit_*_light.jpg).
 
 clear; close all; clc;
 
-files = dir('*.jpg');
-if isempty(files), files = dir('*.png'); end
-if isempty(files), files = dir('*.jpeg'); end
+assetDir = fullfile(fileparts(mfilename('fullpath')), '..', 'report_assets');
+if ~isfolder(assetDir)
+    error('report_assets folder not found at %s', assetDir);
+end
+
+files = dir(fullfile(assetDir, '*.jpg'));
+if isempty(files), files = dir(fullfile(assetDir, '*.png')); end
 if isempty(files)
-    error('No images found. Download min/mid/max light images from Canvas Lab 2 into this folder.');
+    error('No images found in %s', assetDir);
 end
 
 names = {files.name};
-minF = pick_file(names, {'min'});
-midF = pick_file(names, {'mid'});
-maxF = pick_file(names, {'max'});
+minF = fullfile(assetDir, pick_file(names, {'min'}));
+midF = fullfile(assetDir, pick_file(names, {'mid'}));
+maxF = fullfile(assetDir, pick_file(names, {'max'}));
 
 fprintf('Using:\n  min: %s\n  mid: %s\n  max: %s\n', minF, midF, maxF);
 
@@ -30,7 +32,6 @@ HSVmin = rgb2hsv(Imin);
 HSVmid = rgb2hsv(Imid);
 HSVmax = rgb2hsv(Imax);
 
-% ---- Q4: mid-light histograms ----
 figure('Name','Q4 Mid-light RGB/HSV histograms');
 chans = {'R','G','B','H','S','V'};
 dataMid = {Imid(:,:,1), Imid(:,:,2), Imid(:,:,3), ...
@@ -41,7 +42,6 @@ for k = 1:6
     title(['Mid light: ' chans{k}]);
 end
 
-% ---- Q5/Q6: mean channel trends across lighting ----
 meanRGB = [channel_means(Imin); channel_means(Imid); channel_means(Imax)];
 meanHSV = [channel_means(HSVmin); channel_means(HSVmid); channel_means(HSVmax)];
 
@@ -62,10 +62,6 @@ fprintf('\nMean RGB [R G B]:\n');
 disp(array2table(meanRGB, 'VariableNames',{'R','G','B'}, 'RowNames',{'min','mid','max'}));
 fprintf('Mean HSV [H S V]:\n');
 disp(array2table(meanHSV, 'VariableNames',{'H','S','V'}, 'RowNames',{'min','mid','max'}));
-
-fprintf(['\nExpected trends:\n' ...
-         '  RGB: R,G,B means rise from min->max\n' ...
-         '  HSV: V rises; H relatively flat; S moderate change\n']);
 
 function m = channel_means(I)
 m = [mean(I(:,:,1),'all'), mean(I(:,:,2),'all'), mean(I(:,:,3),'all')];
