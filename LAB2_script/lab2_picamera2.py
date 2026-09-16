@@ -28,13 +28,36 @@ from picamera2.outputs import CircularOutput
 # Output:
 #   Grayscale image of the size as img with higher intensity denoting greater color difference. shape: (N, M)
 def color_subtract(img, color):
-    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+    # Picamera2 "RGB888" buffers are BGR-ordered for OpenCV on this Pi
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     h_channel = hsv[:, :, 0]
+    s_channel = hsv[:, :, 1]
 
+    # H is circular (0..179); orange sits near 0 so wrap-around matters
     diff = np.abs(h_channel.astype(np.int16) - int(color))
+    diff = np.minimum(diff, 180 - diff)
+
+    # Low-saturation pixels (gray/beige) are not the ball — push them away
+    diff = np.where(s_channel < 50, 255, diff)
     final_img = diff.astype(np.uint8)
 
     return final_img
+
+
+def keep_largest_blob(binary, min_area=300):
+    """Drop speckles; keep only the largest white region for a stable centroid."""
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    if n_labels <= 1:
+        return np.zeros_like(binary)
+
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    largest_idx = 1 + int(np.argmax(areas))
+    if stats[largest_idx, cv2.CC_STAT_AREA] < min_area:
+        return np.zeros_like(binary)
+
+    out = np.zeros_like(binary)
+    out[labels == largest_idx] = 255
+    return out
 
 # Function to find the centroid and radius of a detected region
 # Inputs:
@@ -107,11 +130,17 @@ def contours_localization(img):
 ################################
 ### CONSTANTS AND PARAMETERS ###
 ################################
-USE_IDX_IMG = False
+USE_IDX_IMG = True   # False = nested loops (very slow, ~0.5–2s/frame); True = NumPy index image (fast)
 FTP = True
 
-H_val = 15
-thold_val = 20
+# Orange ball starting guesses — tune with trackbars while watching Binary Image
+H_val = 13
+thold_val = 13
+
+# Light smoothing so the green circle doesn't jitter frame-to-frame
+SMOOTH_ALPHA = 0.45
+_smooth_center = None
+_smooth_radius = 0
 
 ######################
 ### INITIALIZATION ###
@@ -158,8 +187,10 @@ while True:
     H_val = cv2.getTrackbarPos("H-value", "Trackbars")
     thold_val = cv2.getTrackbarPos("Threshold", "Trackbars")
 
-    image = picam2.capture_buffer("main").reshape((480, 640, 3)).astype(np.uint8)
-    display_image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    # capture_array: same pixels as buffer, shape (480, 640, 3)
+    # On this Pi, treating it as BGR matches OpenCV display (orange stays orange).
+    image = picam2.capture_array("main")
+    display_image = image.copy()
 
     color_threshold_timer.start_time()
 
@@ -173,13 +204,32 @@ while True:
 
     thresh_timer.start_time()
     _, thresh = cv2.threshold(filtered, thold_val, 255, cv2.THRESH_BINARY_INV)
+    # Morphological cleanup: remove salt noise, fill small holes in the ball
+    kernel = np.ones((5, 5), np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+    thresh = keep_largest_blob(thresh, min_area=300)
     thresh_timer.end_time()
 
     color_threshold_timer.end_time()
 
     contours_timer.start_time()
     center, radius = identify_ball(thresh, USE_IDX_IMG)
-    cv2.circle(display_image, center, radius, (0, 255, 0), 2)
+
+    if radius > 0:
+        if _smooth_center is None:
+            _smooth_center, _smooth_radius = center, radius
+        else:
+            a = SMOOTH_ALPHA
+            _smooth_center = (
+                int(a * center[0] + (1 - a) * _smooth_center[0]),
+                int(a * center[1] + (1 - a) * _smooth_center[1]),
+            )
+            _smooth_radius = int(a * radius + (1 - a) * _smooth_radius)
+        draw_c, draw_r = _smooth_center, _smooth_radius
+        cv2.circle(display_image, draw_c, draw_r, (0, 255, 0), 2)
+    else:
+        _smooth_center, _smooth_radius = None, 0
     contours_timer.end_time()
 
     img_disp_timer.start_time()
@@ -193,7 +243,8 @@ while True:
     if key == ord("q"):
         break
     if key == ord("c"):
-        plt.imshow(image)
+        # pyplot expects RGB; OpenCV/Picamera2 buffer here is BGR
+        plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         plt.title("Captured Frame (RGB)")
         plt.axis("off")
         plt.show()
